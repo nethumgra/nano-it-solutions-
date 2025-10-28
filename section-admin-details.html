@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Section Admin Details</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #111827; color: #f9fafb; } /* bg-gray-900 text-gray-100 */
+        main::-webkit-scrollbar { width: 8px; }
+        main::-webkit-scrollbar-track { background: #1f2937; }
+        main::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        main::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="loader" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+    </div>
+
+    <div id="dashboard-wrapper" class="hidden p-8 md:p-12">
+        
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <button id="back-btn" class="flex items-center text-sm text-blue-400 hover:text-blue-300 mb-2">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    Back to Admin Dashboard
+                </button>
+                <h1 class="text-3xl font-bold">Details for <span id="admin-name-el" class="text-blue-400">...</span></h1>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-400">Grand Total (from Orders)</h3>
+                <p id="total-revenue-el" class="text-4xl font-bold mt-2 text-green-400">RS 0.00</p>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-400">Admin's Share (79%)</h3>
+                <p id="admin-share-el" class="text-4xl font-bold mt-2 text-yellow-400">RS 0.00</p>
+            </div>
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-400">Company Income (20%)</h3>
+                <p id="company-share-el" class="text-4xl font-bold mt-2 text-blue-400">RS 0.00</p>
+            </div>
+        </div>
+        
+        <div id="content-container" class="space-y-6">
+            <h2 class="text-2xl font-semibold border-b border-gray-700 pb-2">Customers & Orders</h2>
+            <p id="content-loader" class="text-gray-400">Loading customer and order details...</p>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJGW3-flCwC5y8WXJCJWDvx36eEkw_I5o",
+            authDomain: "pixora-872e3.firebaseapp.com",
+            projectId: "pixora-872e3",
+            storageBucket: "pixora-872e3.firebasestorage.app",
+            messagingSenderId: "315709334461",
+            appId: "1:315709334461:web:a758b041e43837df6d68d4",
+            measurementId: "G-C7J0ZGKR1M"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Get DOM Elements
+        const loader = document.getElementById('loader');
+        const dashboardWrapper = document.getElementById('dashboard-wrapper');
+        const adminNameEl = document.getElementById('admin-name-el');
+        const totalRevenueEl = document.getElementById('total-revenue-el');
+        const adminShareEl = document.getElementById('admin-share-el');
+        const companyShareEl = document.getElementById('company-share-el');
+        const contentContainerEl = document.getElementById('content-container');
+        const contentLoader = document.getElementById('content-loader');
+        const backBtn = document.getElementById('back-btn');
+
+        backBtn.addEventListener('click', () => {
+            window.history.back(); // Go back to the previous page (admin dashboard)
+        });
+
+        // --- Auth Check ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Check if user is an admin
+                const userDocRef = doc(db, "users", user.uid);
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists() && userDocSnap.data().role === 'admin') {
+                    // User is an admin, proceed to load data
+                    initializeApp();
+                } else {
+                    alert('Access Denied. You are not an admin.');
+                    redirectToLogin();
+                }
+            } else {
+                alert('You are not logged in.');
+                redirectToLogin();
+            }
+        });
+
+        function redirectToLogin() {
+            window.location.href = 'index.html';
+        }
+
+        // --- Initialize Page ---
+        async function initializeApp() {
+            // Get Section Admin ID from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const adminId = urlParams.get('id');
+
+            if (!adminId) {
+                contentContainerEl.innerHTML = '<p class="text-red-500 text-2xl">Error: No Section Admin ID provided.</p>';
+                loader.classList.add('hidden');
+                dashboardWrapper.classList.remove('hidden');
+                return;
+            }
+
+            // Load all data
+            await loadAdminDetails(adminId);
+        }
+        
+        // --- Data Loading and Processing ---
+        async function loadAdminDetails(adminId) {
+            try {
+                // 1. Get Admin's Name
+                const adminDoc = await getDoc(doc(db, "users", adminId));
+                if (adminDoc.exists()) {
+                    adminNameEl.textContent = adminDoc.data().name || 'Unknown Admin';
+                }
+
+                // 2. Get all customers for this admin
+                const customerQuery = query(collection(db, "customers"), where("sectionAdminId", "==", adminId));
+                const customerSnapshot = await getDocs(customerQuery);
+                const customersMap = new Map();
+                customerSnapshot.forEach(doc => {
+                    customersMap.set(doc.id, doc.data());
+                });
+
+                // 3. Get all orders for this admin
+                const orderQuery = query(collection(db, "orders"), where("sectionAdminId", "==", adminId));
+                const orderSnapshot = await getDocs(orderQuery);
+                let allOrders = [];
+                orderSnapshot.forEach(doc => {
+                    allOrders.push({ id: doc.id, ...doc.data() });
+                });
+
+                // 4. Calculate Totals
+                let grandTotal = 0;
+                allOrders.forEach(order => {
+                    grandTotal += order.amount || 0;
+                });
+                
+                const companyShare = grandTotal * 0.20;
+                const adminShare = grandTotal * 0.79;
+                // (1% is company savings, not shown here)
+
+                // 5. Display Totals
+                totalRevenueEl.textContent = `RS ${grandTotal.toFixed(2)}`;
+                adminShareEl.textContent = `RS ${adminShare.toFixed(2)}`;
+                companyShareEl.textContent = `RS ${companyShare.toFixed(2)}`;
+
+                // 6. Render the data
+                renderCustomerOrders(customersMap, allOrders);
+                
+                loader.classList.add('hidden');
+                dashboardWrapper.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Error loading details: ", error);
+                contentLoader.textContent = "Failed to load data.";
+                contentLoader.classList.add('text-red-500');
+                loader.classList.add('hidden');
+                dashboardWrapper.classList.remove('hidden');
+            }
+        }
+        
+        // --- Render Function ---
+        function renderCustomerOrders(customersMap, allOrders) {
+            contentContainerEl.innerHTML = '<h2 class="text-2xl font-semibold border-b border-gray-700 pb-2">Customers & Orders</h2>'; // Clear loader and set title
+            
+            if (customersMap.size === 0) {
+                contentContainerEl.innerHTML += '<p class="text-gray-400">This section admin has not added any customers yet.</p>';
+                return;
+            }
+
+            // Loop over each customer
+            customersMap.forEach((customer, customerId) => {
+                let customerHTML = `
+                    <div class="bg-gray-800 rounded-lg shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-blue-300">${customer.name}</h3>
+                        <p class="text-sm text-gray-400 mb-4">${customer.phone || 'No phone'} | ${customer.email || 'No email'}</p>
+                        
+                        <h4 class="text-lg font-semibold mb-2">Orders:</h4>
+                `;
+                
+                // Find orders for this customer
+                const customerOrders = allOrders.filter(order => order.customerId === customerId);
+                
+                if (customerOrders.length === 0) {
+                    customerHTML += '<p class="text-sm text-gray-500">No orders found for this customer.</p>';
+                } else {
+                    // Create table for orders
+                    customerHTML += `
+                        <table class="w-full text-left text-sm">
+                            <thead class="border-b border-gray-700">
+                                <tr>
+                                    <th class="py-2">Order Date</th>
+                                    <th class="py-2">Total Price (RS)</th>
+                                    <th class="py-2">Slip</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-700">
+                    `;
+                    
+                    customerOrders.forEach(order => {
+                        customerHTML += `
+                            <tr>
+                                <td class="py-2 text-gray-400">${order.createdAt.toDate().toLocaleDateString()}</td>
+                                <td class="py-2 font-medium">RS ${order.amount.toFixed(2)}</td>
+                                <td class="py-2">
+                                    ${order.slipUrl ? `<a href="${order.slipUrl}" target="_blank" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-xs">View Slip</a>` : '<span class="text-xs text-gray-500">No Slip</span>'}
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    customerHTML += '</tbody></table>';
+                }
+                
+                customerHTML += '</div>'; // Close customer card
+                contentContainerEl.innerHTML += customerHTML;
+            });
+        }
+
+    </script>
+</body>
+</html>

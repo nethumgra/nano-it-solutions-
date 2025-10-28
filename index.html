@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixora Solutions - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+
+    <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm">
+        <h1 class="text-3xl font-bold text-center mb-6">Pixora Solutions</h1>
+        
+        <form id="login-form">
+            <div class="mb-4">
+                <label for="email" class="block mb-2 text-sm font-medium">Email</label>
+                <input type="email" id="email" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" placeholder="name@company.com" required>
+            </div>
+            <div class="mb-6">
+                <label for="password" class="block mb-2 text-sm font-medium">Password</label>
+                <input type="password" id="password" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" placeholder="••••••••" required>
+            </div>
+            <button type="submit" id="login-btn" class="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-800 font-medium rounded-lg text-sm px-5 py-2.5 text-center">Login</button>
+        </form>
+        <p id="error-message" class="text-red-500 text-sm mt-4 text-center"></p>
+    </div>
+
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJGW3-flCwC5y8WXJCJWDvx36eEkw_I5o",
+            authDomain: "pixora-872e3.firebaseapp.com",
+            projectId: "pixora-872e3",
+            storageBucket: "pixora-872e3.firebasestorage.app",
+            messagingSenderId: "315709334461",
+            appId: "1:315709334461:web:a758b041e43837df6d68d4",
+            measurementId: "G-C7J0ZGKR1M"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- Login Logic ---
+
+        // Get DOM Elements
+        const loginForm = document.getElementById('login-form');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const errorMessage = document.getElementById('error-message');
+        const loginButton = document.getElementById('login-btn');
+
+        // Login form submission listener
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMessage.textContent = '';
+            loginButton.textContent = 'Logging in...';
+            loginButton.disabled = true;
+
+            const email = emailInput.value;
+            const password = passwordInput.value;
+
+            try {
+                // 1. Firebase Auth වලින් login වෙනවා
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // 2. Login successful. Firestore එකෙන් user ගේ role එක හොයනවා
+                const userDocRef = doc(db, "users", user.uid); // 'users' collection එකේ user.uid එකෙන් document එක හොයනවා
+                const userDocSnap = await getDoc(userDocRef);
+
+                if (userDocSnap.exists()) {
+                    // 3. Document එක හම්බුනා
+                    const userData = userDocSnap.data();
+                    const role = userData.role; // Database එකේ 'role' field එක
+
+                    // 4. Role එක අනුව අදාළ Dashboard එකට redirect කරනවා
+                    if (role === 'admin') {
+                        window.location.href = 'admin-dashboard.html';
+                    } else if (role === 'section-admin') {
+                        window.location.href = 'section-admin-dashboard.html';
+                    } else if (role === 'employee') {
+                        window.location.href = 'employee-dashboard.html';
+                    } else {
+                        // Role එකක් set කරලා නැත්නම්
+                        errorMessage.textContent = 'Your account does not have a valid role assigned.';
+                        await signOut(auth); // Role නැති නිසා ආපහු logout කරනවා
+                    }
+                } else {
+                    // 'users' collection එකේ මේ user ට data නැත්නම්
+                    errorMessage.textContent = 'No user role data found for this account.';
+                    await signOut(auth);
+                }
+
+            } catch (error) {
+                // Login failed (wrong password, user not found, etc.)
+                console.error('Login Error:', error.code);
+                if (error.code === 'auth/invalid-credential') {
+                    errorMessage.textContent = 'Login failed. Please check your email and password.';
+                } else {
+                    errorMessage.textContent = 'An error occurred. Please try again.';
+                }
+            } finally {
+                // Button එක ආපහු reset කරනවා
+                loginButton.textContent = 'Login';
+                loginButton.disabled = false;
+            }
+        });
+
+    </script>
+</body>
+</html>
